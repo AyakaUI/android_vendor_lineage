@@ -18,11 +18,6 @@ PRODUCT_PACKAGES += \
     Twelve
 endif
 
-ifneq ($(PRODUCT_NO_CAMERA),true)
-PRODUCT_PACKAGES += \
-    Aperture
-endif
-
 ifeq ($(LINEAGE_BUILD),true)
 ifneq ($(TARGET_EXCLUDES_AUDIOFX),true)
 PRODUCT_PACKAGES += \
