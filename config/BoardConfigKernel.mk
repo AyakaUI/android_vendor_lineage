@@ -45,9 +45,12 @@
 #                                          Defaults to empty
 #   TARGET_KERNEL_EXT_MODULES          = Optional, the external modules we are
 #                                          building. Defaults to empty
+#   TARGET_KERNEL_BAZEL_FLAGS          = Optional, additional Bazel flags for the kernel build
+#   TARGET_KERNEL_UNSAFE_DDK_HEADERS   = Specifies if bazel build should use unsafe headers for DDK
+#                                        modules, this defaults to empty and should only be set to
+#                                        true if no other choice.
 #
 #   USE_CCACHE                         = Enable ccache (global Android flag)
-#   USE_RBE                            = Enable RBE (global Android flag)
 
 include vendor/lineage/build/core/utils.mk
 
@@ -111,32 +114,13 @@ ifneq ($(USE_CCACHE),)
     endif
 endif
 
-# build/make/core/rbe.mk is only read while dumping the product config, so the
-# rewrapper flags have to be recreated here
-KERNEL_RBE_WRAPPER :=
-ifneq ($(filter-out false,$(USE_REWRAPPER)),)
-    # An out dir outside of the tree can't be a remote input or output
-    ifneq ($(filter $(BUILD_TOP)/%,$(abspath $(OUT_DIR))),)
-        KERNEL_RBE_WRAPPER := $(abspath $(if $(RBE_DIR),$(RBE_DIR),prebuilts/remoteexecution-client/live))/rewrapper
-        KERNEL_RBE_WRAPPER += --labels=type=compile,lang=cpp,compiler=clang
-        KERNEL_RBE_WRAPPER += --env_var_allowlist=PWD
-        KERNEL_RBE_WRAPPER += --exec_strategy=$(if $(RBE_CXX_EXEC_STRATEGY),$(RBE_CXX_EXEC_STRATEGY),local)
-        KERNEL_RBE_WRAPPER += --compare=$(if $(RBE_CXX_COMPARE),$(RBE_CXX_COMPARE),false)
-        ifneq ($(RBE_platform),)
-            KERNEL_RBE_WRAPPER += --platform=$(RBE_platform),Pool=$(if $(RBE_CXX_POOL),$(RBE_CXX_POOL),default)
-        endif
-    endif
-endif
-
-# ccache can't cache anything behind another wrapper, so it gives way to RBE
-ifneq ($(KERNEL_RBE_WRAPPER),)
-    KERNEL_CC_WRAPPER := $(BUILD_TOP)/vendor/lineage/build/tools/kernel_rbe_cc.sh
-else
-    KERNEL_CC_WRAPPER := $(CCACHE_BIN)
-endif
-
-# Clear this first to prevent accidental poisoning from env
+# Clear these first to prevent accidental poisoning from env
+KERNEL_BAZEL_FLAGS := $(TARGET_KERNEL_BAZEL_FLAGS)
 KERNEL_MAKE_FLAGS :=
+
+ifeq ($(TARGET_KERNEL_UNSAFE_DDK_HEADERS),true)
+    KERNEL_BAZEL_FLAGS += --//build/kernel/kleaf:allow_ddk_unsafe_headers
+endif
 
 # Add back threads, ninja cuts this to $(getconf _NPROCESSORS_ONLN)/2
 KERNEL_MAKE_FLAGS += -j$(shell getconf _NPROCESSORS_ONLN)
@@ -198,6 +182,14 @@ ifneq ($(TARGET_KERNEL_CLANG_AUTOFDO_PROFILE),none)
     ifneq ($(wildcard $(TARGET_KERNEL_CLANG_AUTOFDO_PROFILE)),)
         KERNEL_MAKE_FLAGS += CLANG_AUTOFDO_PROFILE=$(BUILD_TOP)/$(TARGET_KERNEL_CLANG_AUTOFDO_PROFILE)
     endif
+endif
+
+# Pass board platform to kernel build
+TARGET_KERNEL_ADDITIONAL_FLAGS += TARGET_BOARD_PLATFORM=$(TARGET_BOARD_PLATFORM)
+
+# Additional make flags
+ifneq ($(TARGET_KERNEL_ADDITIONAL_FLAGS),)
+    KERNEL_MAKE_FLAGS += $(TARGET_KERNEL_ADDITIONAL_FLAGS)
 endif
 
 # Set the out dir for the kernel's O= arg
